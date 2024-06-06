@@ -1,0 +1,53 @@
+name: train-my-model
+on:
+  push:
+    branches:
+      - main
+      - '**/feature/**'
+      - '**/bugfix/**'
+
+jobs:
+  train-model:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: iterative/setup-cml@v1
+      
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+          export_default_credentials: true
+      
+      - name: Install dependencies
+        run: |
+          pip3 install -r requirements.txt
+      
+      - name: Upload data to Google Cloud Storage
+        run: |
+          gsutil cp data/train.csv gs://demo-automate/data/train.csv
+
+      - name: Train model on Google Cloud
+        run: |
+          gcloud ai-platform jobs submit training ${{ github.run_id }} \
+            --region us-central1 \
+            --master-image-uri gcr.io/my-project-id/my-custom-training-image \
+            -- \
+            --job-dir=gs://my-bucket-name/outputs/${{ github.run_id }} \
+            --train-file=gs://demo-automate/data/train.csv \
+            --output-dir=gs://demo-automate/outputs/${{ github.run_id }}
+
+      - name: Download trained model
+        run: |
+          gsutil cp gs://my-bucket-name/outputs/${{ github.run_id }}/model/* ./model/
+
+      - name: Create CML report
+        run: |
+          cml comment create --pr --publish metrics.txt
